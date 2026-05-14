@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { loadConfig, getInputMode } from "./config/loader.js";
 import { captureBothUrls, captureFromImages } from "./screenshot/capturer.js";
 import { computeDiff } from "./diff/pixel-diff.js";
