@@ -1,0 +1,26 @@
+{
+  "name": "visual-proofreader",
+  "version": "1.0.0",
+  "description": "Visual regression and OCR-based proofreading tool for web pages, H5, and design mockups",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "start:web": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0",
+    "pixelmatch": "^6.0.0",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pngjs": "^6.0.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

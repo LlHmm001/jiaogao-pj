@@ -1,0 +1,7 @@
+[
+  {
+    "name": "首页对比",
+    "baseline_image": "examples/baseline.png",
+    "current_image": "examples/current.png"
+  }
+]

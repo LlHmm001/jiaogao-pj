@@ -1,0 +1,12 @@
+[
+  {
+    "name": "首页-desktop",
+    "baseline_url": "https://staging.example.com/",
+    "current_url": "https://production.example.com/"
+  },
+  {
+    "name": "登录页-desktop",
+    "baseline_url": "https://staging.example.com/login",
+    "current_url": "https://production.example.com/login"
+  }
+]

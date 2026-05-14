@@ -1,0 +1,48 @@
+version: "3.8"
+
+services:
+  # ---- Node.js web server + API ----
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: visual-proofreader
+    ports:
+      - "3100:3100"
+    environment:
+      - OCR_ENDPOINT=http://ocr:8866
+      - OCR_TIMEOUT=60000
+      - BROWSER_TYPE=chromium
+      # LLM (optional — set in .env or override here)
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_API_URL=${LLM_API_URL:-https://api.openai.com/v1}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o}
+      - LLM_TIMEOUT=${LLM_TIMEOUT:-30000}
+    volumes:
+      - ./config:/app/config:ro
+      - ./examples:/app/examples:ro
+      - screenshots_data:/app/screenshots
+      - reports_data:/app/reports
+    depends_on:
+      ocr:
+        condition: service_started
+    restart: unless-stopped
+
+  # ---- EasyOCR HTTP service ----
+  ocr:
+    build:
+      context: .
+      dockerfile: docker/ocr/Dockerfile
+    container_name: visual-proofreader-ocr
+    ports:
+      - "8866:8866"
+    environment:
+      - LANG=ch_sim,en
+    volumes:
+      - ocr_models:/root/.EasyOCR
+    restart: unless-stopped
+
+volumes:
+  screenshots_data:
+  reports_data:
+  ocr_models:

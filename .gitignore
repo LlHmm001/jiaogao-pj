@@ -1,0 +1,8 @@
+node_modules/
+dist/
+screenshots/
+reports/
+.env
+*.tsbuildinfo
+# Docker volumes (local)
+docker/ocr/models/

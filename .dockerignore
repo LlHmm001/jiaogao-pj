@@ -1,0 +1,9 @@
+node_modules/
+dist/
+screenshots/
+reports/
+.env
+*.tsbuildinfo
+.git/
+.github/
+README.md
