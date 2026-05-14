@@ -1,5 +1,4 @@
 services:
-  # ---- Node.js web server + API ----
   app:
     build:
       context: .
@@ -9,38 +8,14 @@ services:
       - "${PORT:-3100}:${PORT:-3100}"
     environment:
       - PORT=${PORT:-3100}
-      - OCR_ENDPOINT=http://ocr:8866
-      - OCR_TIMEOUT=${OCR_TIMEOUT:-60000}
       - BROWSER_TYPE=${BROWSER_TYPE:-chromium}
-      - LLM_API_KEY=${LLM_API_KEY:-}
-      - LLM_API_URL=${LLM_API_URL:-https://api.openai.com/v1}
-      - LLM_MODEL=${LLM_MODEL:-gpt-4o}
-      - LLM_TIMEOUT=${LLM_TIMEOUT:-30000}
     volumes:
       - ./config:/app/config:ro
       - ./examples:/app/examples:ro
       - screenshots_data:/app/screenshots
       - reports_data:/app/reports
-    depends_on:
-      ocr:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # ---- EasyOCR HTTP service ----
-  ocr:
-    build:
-      context: .
-      dockerfile: docker/ocr/Dockerfile
-    container_name: visual-proofreader-ocr
-    ports:
-      - "8866:8866"
-    environment:
-      - LANG=ch_sim,en
-    volumes:
-      - ocr_models:/root/.EasyOCR
     restart: unless-stopped
 
 volumes:
   screenshots_data:
   reports_data:
-  ocr_models:

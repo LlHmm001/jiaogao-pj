@@ -13,11 +13,9 @@ export function loadConfig(): AppConfig {
   validatePages(pages);
   validateViewports(viewports);
 
-  const ocrEndpoint = process.env.OCR_ENDPOINT || "http://localhost:8866";
-  const ocrTimeout = parseEnvInt("OCR_TIMEOUT", 30000);
   const browserType = parseBrowserType(process.env.BROWSER_TYPE);
 
-  return { pages, viewports, ocrEndpoint, ocrTimeout, browserType };
+  return { pages, viewports, browserType };
 }
 
 function loadJson<T>(path: string, label: string): T {
@@ -91,14 +89,6 @@ function validateViewports(viewports: ViewportConfig[]): void {
   }
 }
 
-function parseEnvInt(key: string, defaultVal: number): number {
-  const val = process.env[key];
-  if (!val) return defaultVal;
-  const n = parseInt(val, 10);
-  if (isNaN(n)) throw new Error(`环境变量 ${key} 必须为整数，当前值为: "${val}"`);
-  return n;
-}
-
 function parseBrowserType(val: string | undefined): AppConfig["browserType"] {
   if (!val) return "chromium";
   if (val === "chromium" || val === "firefox" || val === "webkit") return val;
@@ -109,7 +99,6 @@ function isValidUrl(s: string): boolean {
   return /^https?:\/\/.+/.test(s);
 }
 
-/** 判断页面使用哪种输入模式 */
 export function getInputMode(page: PageConfig): "url" | "image" {
   if (page.baseline_image && page.current_image) return "image";
   return "url";

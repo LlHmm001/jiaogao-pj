@@ -1,15 +1,11 @@
-import "dotenv/config";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { computeDiff } from "./diff/pixel-diff.js";
-import { recognizeText } from "./ocr/client.js";
-import { compareOcrResults } from "./ocr/compare.js";
-import { runAllDetectorsAsync } from "./detectors/index.js";
-import { runProofreadAgent } from "./agents/proofread-agent.js";
+import { runAllDetectors } from "./detectors/index.js";
 import { generateReports } from "./report/generator.js";
-import type { ReportData, ComparisonResult, ReportSummary, OcrResult } from "./types/index.js";
+import type { ReportData, ComparisonResult, ReportSummary } from "./types/index.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -70,7 +66,7 @@ const UPLOAD_HTML = `<!DOCTYPE html>
   :root {
     --bg: #f5f6f8; --card-bg: #fff; --text: #1a1a2e; --muted: #6b7280;
     --border: #e5e7eb; --red: #dc2626; --orange: #f97316; --yellow: #eab308;
-    --blue: #3b82f6; --green: #16a34a; --purple: #8b5cf6; --teal: #0d9488;
+    --blue: #3b82f6; --green: #16a34a; --purple: #8b5cf6;
     --radius: 10px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -124,14 +120,6 @@ const UPLOAD_HTML = `<!DOCTYPE html>
   .drop-zone .clear-btn:hover { background: var(--red); }
   input[type="file"] { display: none; }
 
-  /* config section */
-  .config-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: end; }
-  @media (max-width: 640px) { .config-row { grid-template-columns: 1fr; } }
-  .field { display: flex; flex-direction: column; gap: 4px; }
-  .field label { font-size: 0.78rem; font-weight: 600; color: var(--muted); }
-  .field input { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.88rem; }
-  .field input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
-
   .btn {
     padding: 10px 24px; border: none; border-radius: 6px; font-size: 0.9rem;
     font-weight: 600; cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 6px;
@@ -157,7 +145,6 @@ const UPLOAD_HTML = `<!DOCTYPE html>
   .badge-yellow { background: var(--yellow); color: #1a1a2e; }
   .badge-green { background: var(--green); }
   .badge-blue { background: var(--blue); }
-  .badge-gray { background: #9ca3af; }
 
   .issue-list { list-style: none; }
   .issue-item { padding: 10px 14px; margin-bottom: 6px; border-radius: 6px; background: #fef2f2; border: 1px solid #fecaca; font-size: 0.86rem; display: flex; align-items: flex-start; gap: 8px; }
@@ -209,25 +196,6 @@ const UPLOAD_HTML = `<!DOCTYPE html>
 </div>
 
 <div class="card">
-  <h2>OCR 配置</h2>
-  <div class="config-row">
-    <div class="field">
-      <label for="ocrEndpoint">OCR 服务地址</label>
-      <input type="text" id="ocrEndpoint" value="http://localhost:8866" placeholder="http://localhost:8866">
-    </div>
-    <div class="field">
-      <label for="ocrTimeout">超时 (ms)</label>
-      <input type="number" id="ocrTimeout" value="120000" style="width:100px">
-    </div>
-    <div class="field">
-      <label>&nbsp;</label>
-      <button class="btn btn-outline" onclick="testOcr()" id="testOcrBtn">测试连接</button>
-    </div>
-  </div>
-  <div id="ocrStatus" style="margin-top:8px;font-size:0.82rem;"></div>
-</div>
-
-<div class="card">
   <button class="btn btn-primary" id="compareBtn" onclick="startCompare()" disabled style="width:100%;justify-content:center;padding:14px;">
     选择两张图片后开始对比
   </button>
@@ -244,7 +212,7 @@ const UPLOAD_HTML = `<!DOCTYPE html>
   </div>
 </div>
 
-<footer>Visual Proofreader — 基于 pixelmatch + PaddleOCR / EasyOCR</footer>
+<footer>Visual Proofreader — 基于 pixelmatch 像素对比</footer>
 
 </div>
 
@@ -345,16 +313,12 @@ async function startCompare() {
   results.classList.add('result-hidden');
   status.innerHTML = '';
 
-  const ocrEndpoint = document.getElementById('ocrEndpoint').value || 'http://localhost:8866';
-  const ocrTimeout = parseInt(document.getElementById('ocrTimeout').value) || 30000;
-
   try {
     const resp = await fetch('/api/compare', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         baselineBase64, currentBase64,
-        ocrEndpoint, ocrTimeout,
         baselineName: baselineFile?.name || 'baseline.png',
         currentName: currentFile?.name || 'current.png',
       })
@@ -376,32 +340,16 @@ async function startCompare() {
 
 function renderResults(data) {
   const s = data.summary;
-  let agentHtml = '';
-  if (s.agentNoiseFiltered > 0) {
-    agentHtml = '<div class="stat-card"><div class="value" style="color:var(--purple)">- ' + s.agentNoiseFiltered + '</div><div class="label">OCR 噪声已过滤</div></div>';
-  }
   document.getElementById('statGrid').innerHTML =
     '<div class="stat-card"><div class="value" style="color:var(--blue)">' + (s.diffPercent ?? 0).toFixed(2) + '%</div><div class="label">像素差异</div></div>' +
     '<div class="stat-card"><div class="value" style="color:var(--red)">' + s.totalIssues + '</div><div class="label">发现问题</div></div>' +
-    '<div class="stat-card"><div class="value" style="color:var(--orange)">' + s.diffPixels.toLocaleString() + '</div><div class="label">差异像素</div></div>' +
-    '<div class="stat-card"><div class="value" style="color:var(--green)">' + (s.ocrSuccess ? '成功' : (s.ocrFailures > 0 ? '失败' : '-')) + '</div><div class="label">OCR 状态</div></div>' +
-    agentHtml;
+    '<div class="stat-card"><div class="value" style="color:var(--orange)">' + s.diffPixels.toLocaleString() + '</div><div class="label">差异像素</div></div>';
 
   let issueHtml = '';
   if (data.issues && data.issues.length > 0) {
     issueHtml = '<h3 style="margin-bottom:8px;">发现的问题 (' + data.issues.length + ')</h3><ul class="issue-list">';
-    const catLabels = {
-      text_missing: '文字丢失', text_changed: '文字变化', layout_shift: '布局偏移',
-      text_direction_changed: '方向变化', text_overflow: '文字溢出',
-      line_break_anomaly: '换行异常', image_deformation: '图片变形', element_overlap: '元素重叠',
-      semantic_change: '语义变化 (LLM)',
-    };
-    const catColors = {
-      text_missing: 'badge-red', text_changed: 'badge-orange', layout_shift: 'badge-yellow',
-      text_direction_changed: 'badge-gray', text_overflow: 'badge-blue',
-      line_break_anomaly: 'badge-orange', image_deformation: 'badge-orange', element_overlap: 'badge-red',
-      semantic_change: 'badge-purple',
-    };
+    const catLabels = { image_deformation: '图片变形' };
+    const catColors = { image_deformation: 'badge-orange' };
     for (const iss of data.issues) {
       const cls = iss.severity === 'warning' ? 'warn' : '';
       const sevBadge = iss.severity === 'error' ? '<span class="badge badge-red sev">错误</span>' :
@@ -413,7 +361,7 @@ function renderResults(data) {
     }
     issueHtml += '</ul>';
   } else {
-    issueHtml = '<div class="status-msg status-ok">未发现问题</div>';
+    issueHtml = '<div class="status-msg status-ok">未发现明显差异</div>';
   }
   document.getElementById('issueSummary').innerHTML = issueHtml;
   document.getElementById('results').classList.remove('result-hidden');
@@ -425,40 +373,6 @@ function resetAll() {
   document.getElementById('compareStatus').innerHTML = '';
   document.getElementById('results').classList.add('result-hidden');
 }
-
-async function testOcr() {
-  const endpoint = document.getElementById('ocrEndpoint').value || 'http://localhost:8866';
-  const timeout = parseInt(document.getElementById('ocrTimeout').value) || 30000;
-  const status = document.getElementById('ocrStatus');
-  const btn = document.getElementById('testOcrBtn');
-  status.innerHTML = '正在测试...';
-  btn.disabled = true;
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), Math.min(timeout, 10000));
-    const resp = await fetch(endpoint + '/health', {
-      method: 'GET',
-      signal: ctrl.signal,
-    });
-    clearTimeout(t);
-    if (resp.ok) {
-      status.innerHTML = '<span style="color:var(--green)">连接成功 — OCR 服务可用</span>';
-    } else {
-      status.innerHTML = '<span style="color:var(--orange)">返回 HTTP ' + resp.status + ' — 服务异常</span>';
-    }
-  } catch (e) {
-    const msg = e.message || '';
-    if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
-      status.innerHTML = '<span style="color:var(--red)">无法连接 — OCR 服务未启动</span><br><small style="color:var(--muted)">请在新终端运行: python scripts/easyocr_server.py</small>';
-    } else if (msg.includes('aborted') || msg.includes('timeout')) {
-      status.innerHTML = '<span style="color:var(--red)">连接超时 — OCR 服务响应过慢</span>';
-    } else {
-      status.innerHTML = '<span style="color:var(--red)">连接失败: ' + msg + '</span>';
-    }
-  } finally {
-    btn.disabled = false;
-  }
-}
 </script>
 </body>
 </html>`;
@@ -468,8 +382,6 @@ async function testOcr() {
 interface CompareRequest {
   baselineBase64: string;
   currentBase64: string;
-  ocrEndpoint: string;
-  ocrTimeout: number;
   baselineName: string;
   currentName: string;
 }
@@ -496,25 +408,8 @@ async function handleCompare(body: CompareRequest, res: ServerResponse) {
   // Pixel diff
   const diffResult = computeDiff(pageName, viewportName, baselinePath, currentPath);
 
-  // OCR
-  const ocrEndpoint = body.ocrEndpoint || "http://localhost:8866";
-  const ocrTimeout = body.ocrTimeout || 30000;
-  const [baselineOcr, currentOcr] = await Promise.all([
-    recognizeText(ocrEndpoint, ocrTimeout, baselinePath, pageName, viewportName, "baseline"),
-    recognizeText(ocrEndpoint, ocrTimeout, currentPath, pageName, viewportName, "current"),
-  ]);
-
-  let ocrCompare = null;
-  if (baselineOcr.status === "ok" && currentOcr.status === "ok") {
-    ocrCompare = compareOcrResults(baselineOcr, currentOcr);
-  }
-
-  // Detectors
-  const rawIssues = await runAllDetectorsAsync(diffResult, baselineOcr, currentOcr, ocrCompare);
-
-  // Agent: filter OCR noise
-  const agentReport = await runProofreadAgent(rawIssues, ocrCompare, pageName, viewportName);
-  const issues = agentReport.issues;
+  // Detector
+  const issues = runAllDetectors(diffResult);
 
   // Build comparison result
   const comparison: ComparisonResult = {
@@ -528,7 +423,7 @@ async function handleCompare(body: CompareRequest, res: ServerResponse) {
       viewport: { width: w, height: h },
     },
     diff: diffResult,
-    baselineOcr, currentOcr, ocrCompare, issues,
+    issues,
   };
 
   // Build summary
@@ -537,16 +432,11 @@ async function handleCompare(body: CompareRequest, res: ServerResponse) {
     totalIssues: issues.length,
     issuesByCategory: {},
     issuesBySeverity: {},
-    ocrFailures: 0,
   };
   for (const iss of issues) {
     summary.issuesByCategory[iss.category] = (summary.issuesByCategory[iss.category] ?? 0) + 1;
     summary.issuesBySeverity[iss.severity] = (summary.issuesBySeverity[iss.severity] ?? 0) + 1;
   }
-  if (baselineOcr.status === "OCR_FAILED") summary.ocrFailures++;
-  if (currentOcr.status === "OCR_FAILED") summary.ocrFailures++;
-
-  const ocrSuccess = baselineOcr.status === "ok" && currentOcr.status === "ok";
 
   // Generate report
   const reportData: ReportData = {
@@ -554,7 +444,7 @@ async function handleCompare(body: CompareRequest, res: ServerResponse) {
     config: {
       pages: [{ name: pageName, baseline_url: "", current_url: "", baseline_image: baselinePath, current_image: currentPath, inputMode: "image" }],
       viewports: [{ name: viewportName, width: w, height: h }],
-      ocrEndpoint, browserType: "chromium",
+      browserType: "chromium",
     },
     summary,
     comparisons: [comparison],
@@ -568,10 +458,6 @@ async function handleCompare(body: CompareRequest, res: ServerResponse) {
       diffPercent: diffResult.diffPercent,
       diffPixels: diffResult.diffPixels,
       totalPixels: diffResult.totalPixels,
-      ocrSuccess,
-      agentNoiseFiltered: agentReport.noiseCount,
-      agentRealIssues: agentReport.realCount,
-      agentLlmOk: agentReport.llmOk,
     },
     issues,
     reportUrl: "/reports/index.html",
@@ -641,7 +527,6 @@ async function main() {
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`=== 视觉校稿 Web 界面 ===`);
     console.log(`服务地址: http://0.0.0.0:${PORT}`);
-    console.log(`OCR 服务: ${process.env.OCR_ENDPOINT || "http://localhost:8866"}`);
     console.log(`按 Ctrl+C 停止服务\n`);
   });
 }

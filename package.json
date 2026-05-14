@@ -1,7 +1,7 @@
 {
   "name": "visual-proofreader",
-  "version": "1.0.0",
-  "description": "Visual regression and OCR-based proofreading tool for web pages, H5, and design mockups",
+  "version": "2.0.0",
+  "description": "Visual regression proofreading tool — pixel-level image diffing for web pages, H5, and design mockups",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "dotenv": "^17.4.2",
     "pixelmatch": "^6.0.0",
     "playwright": "^1.52.0",
     "pngjs": "^7.0.0",
