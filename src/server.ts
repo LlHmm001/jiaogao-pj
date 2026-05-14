@@ -6,6 +6,7 @@ import { computeDiff } from "./diff/pixel-diff.js";
 import { recognizeText } from "./ocr/client.js";
 import { compareOcrResults } from "./ocr/compare.js";
 import { runAllDetectorsAsync } from "./detectors/index.js";
+import { runProofreadAgent } from "./agents/proofread-agent.js";
 import { generateReports } from "./report/generator.js";
 import type { ReportData, ComparisonResult, ReportSummary, OcrResult } from "./types/index.js";
 
@@ -374,11 +375,16 @@ async function startCompare() {
 
 function renderResults(data) {
   const s = data.summary;
+  let agentHtml = '';
+  if (s.agentNoiseFiltered > 0) {
+    agentHtml = '<div class="stat-card"><div class="value" style="color:var(--purple)">- ' + s.agentNoiseFiltered + '</div><div class="label">OCR 噪声已过滤</div></div>';
+  }
   document.getElementById('statGrid').innerHTML =
     '<div class="stat-card"><div class="value" style="color:var(--blue)">' + (s.diffPercent ?? 0).toFixed(2) + '%</div><div class="label">像素差异</div></div>' +
     '<div class="stat-card"><div class="value" style="color:var(--red)">' + s.totalIssues + '</div><div class="label">发现问题</div></div>' +
     '<div class="stat-card"><div class="value" style="color:var(--orange)">' + s.diffPixels.toLocaleString() + '</div><div class="label">差异像素</div></div>' +
-    '<div class="stat-card"><div class="value" style="color:var(--green)">' + (s.ocrSuccess ? '成功' : (s.ocrFailures > 0 ? '失败' : '-')) + '</div><div class="label">OCR 状态</div></div>';
+    '<div class="stat-card"><div class="value" style="color:var(--green)">' + (s.ocrSuccess ? '成功' : (s.ocrFailures > 0 ? '失败' : '-')) + '</div><div class="label">OCR 状态</div></div>' +
+    agentHtml;
 
   let issueHtml = '';
   if (data.issues && data.issues.length > 0) {
@@ -386,12 +392,14 @@ function renderResults(data) {
     const catLabels = {
       text_missing: '文字丢失', text_changed: '文字变化', layout_shift: '布局偏移',
       text_direction_changed: '方向变化', text_overflow: '文字溢出',
-      line_break_anomaly: '换行异常', image_deformation: '图片变形', element_overlap: '元素重叠'
+      line_break_anomaly: '换行异常', image_deformation: '图片变形', element_overlap: '元素重叠',
+      semantic_change: '语义变化 (LLM)',
     };
     const catColors = {
       text_missing: 'badge-red', text_changed: 'badge-orange', layout_shift: 'badge-yellow',
       text_direction_changed: 'badge-gray', text_overflow: 'badge-blue',
-      line_break_anomaly: 'badge-orange', image_deformation: 'badge-orange', element_overlap: 'badge-red'
+      line_break_anomaly: 'badge-orange', image_deformation: 'badge-orange', element_overlap: 'badge-red',
+      semantic_change: 'badge-purple',
     };
     for (const iss of data.issues) {
       const cls = iss.severity === 'warning' ? 'warn' : '';
@@ -501,7 +509,11 @@ async function handleCompare(body: CompareRequest, res: ServerResponse) {
   }
 
   // Detectors
-  const issues = await runAllDetectorsAsync(diffResult, baselineOcr, currentOcr, ocrCompare);
+  const rawIssues = await runAllDetectorsAsync(diffResult, baselineOcr, currentOcr, ocrCompare);
+
+  // Agent: filter OCR noise
+  const agentReport = await runProofreadAgent(rawIssues, ocrCompare, pageName, viewportName);
+  const issues = agentReport.issues;
 
   // Build comparison result
   const comparison: ComparisonResult = {
@@ -556,6 +568,9 @@ async function handleCompare(body: CompareRequest, res: ServerResponse) {
       diffPixels: diffResult.diffPixels,
       totalPixels: diffResult.totalPixels,
       ocrSuccess,
+      agentNoiseFiltered: agentReport.noiseCount,
+      agentRealIssues: agentReport.realCount,
+      agentLlmOk: agentReport.llmOk,
     },
     issues,
     reportUrl: "/reports/index.html",

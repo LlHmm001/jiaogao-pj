@@ -4,6 +4,7 @@ import { computeDiff } from "./diff/pixel-diff.js";
 import { recognizeText } from "./ocr/client.js";
 import { compareOcrResults } from "./ocr/compare.js";
 import { runAllDetectorsAsync } from "./detectors/index.js";
+import { runProofreadAgent } from "./agents/proofread-agent.js";
 import { generateReports } from "./report/generator.js";
 import type {
   AppConfig,
@@ -86,8 +87,16 @@ export async function main(): Promise<void> {
 
       // 5. 检测器
       console.log(`  正在运行检测器...`);
-      const issues = await runAllDetectorsAsync(diffResult, baselineOcr, currentOcr, ocrCompare);
-      console.log(`  发现 ${issues.length} 个问题\n`);
+      const rawIssues = await runAllDetectorsAsync(diffResult, baselineOcr, currentOcr, ocrCompare);
+      console.log(`  检测器发现 ${rawIssues.length} 个问题`);
+
+      // 5.5. Agent 审核（过滤 OCR 噪声）
+      const agentReport = await runProofreadAgent(rawIssues, ocrCompare, page.name, viewport.name);
+      const issues = agentReport.issues;
+      if (agentReport.noiseCount > 0) {
+        console.log(`  Agent 过滤了 ${agentReport.noiseCount} 个 OCR 噪声，保留 ${agentReport.realCount} 个真实问题`);
+      }
+      console.log(`  最终: ${issues.length} 个问题\n`);
 
       comparisons.push({
         pageName: page.name,
